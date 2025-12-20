@@ -268,51 +268,38 @@ struct SettingsView: View {
     @ObservedObject var launchManager: LaunchManager
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("Settings")
-                .font(.headline)
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundColor(.secondary)
+                .padding(.leading, 4)
             
-            // Shortcut Picker
-            VStack(alignment: .leading, spacing: 8) {
-                HStack{
-                    Label("Shortcut", systemImage: "keyboard")
-                    Spacer()
-                    ShortcutRecorder(keyCode: $hotKeyManager.shortcutKeyCode, modifiers: $hotKeyManager.shortcutModifiers) { k, m in
-                        hotKeyManager.setShortcut(keyCode: k, modifiers: m)
-                    }
+            HStack{
+                Label("Shortcut", systemImage: "keyboard")
+                Spacer()
+                ShortcutRecorder(keyCode: $hotKeyManager.shortcutKeyCode, modifiers: $hotKeyManager.shortcutModifiers) { k, m in
+                    hotKeyManager.setShortcut(keyCode: k, modifiers: m)
                 }
             }
             
-            Divider()
-            
-            // History Limit
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("History Limit")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    TextField("Limit", value: $clipboardManager.maxItems, formatter: NumberFormatter())
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 60)
-                        .multilineTextAlignment(.trailing)
-                }
-            }
-            
-            Divider()
-            
-            // Launch at Login
             HStack {
-                Text("Launch at Login")
+                Label("History Limit", systemImage: "clock")
+                Spacer()
+                TextField("Limit", value: $clipboardManager.maxItems, formatter: NumberFormatter())
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 60)
+                    .multilineTextAlignment(.trailing)
+            }
+            
+            HStack{
+                Label("Launch at Login", systemImage: "play.fill")
                 Spacer()
                 Toggle("", isOn: $launchManager.isLaunchAtLoginEnabled)
                     .toggleStyle(.switch)
                     .labelsHidden()
             }
-            
-            Divider()
-            
-            // Clear History Button
+
             Button(action: {
                 clipboardManager.clearAll()
             }) {
