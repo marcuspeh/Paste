@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Carbon.HIToolbox
 
 struct ContentView: View {
     @EnvironmentObject var clipboardManager: ClipboardManager
@@ -273,17 +274,13 @@ struct SettingsView: View {
             
             // Shortcut Picker
             VStack(alignment: .leading, spacing: 8) {
-                Text("Shortcut")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                
-                Picker("", selection: $hotKeyManager.currentShortcut) {
-                    ForEach(AppShortcut.defaults) { shortcut in
-                        Text(shortcut.name).tag(shortcut)
+                HStack{
+                    Label("Shortcut", systemImage: "keyboard")
+                    Spacer()
+                    ShortcutRecorder(keyCode: $hotKeyManager.shortcutKeyCode, modifiers: $hotKeyManager.shortcutModifiers) { k, m in
+                        hotKeyManager.setShortcut(keyCode: k, modifiers: m)
                     }
                 }
-                .labelsHidden()
-                .frame(maxWidth: .infinity)
             }
             
             Divider()
@@ -333,4 +330,191 @@ struct SettingsView: View {
         .padding(20)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+}
+
+struct ShortcutRecorder: View {
+    @Binding var keyCode: Int
+    @Binding var modifiers: UInt
+    var onChange: (Int, UInt) -> Void
+    @State private var isRecording = false
+    
+    var body: some View {
+        Button(action: { isRecording = true }) {
+            Text(isRecording ? "Press keys..." : shortcutString)
+                .font(.caption)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(isRecording ? Color.blue.opacity(0.2) : Color.gray.opacity(0.2))
+                .cornerRadius(4)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(isRecording ? Color.blue : Color.clear, lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .background(WindowAccessor { window in
+            if isRecording {
+                window?.makeFirstResponder(nil)
+            }
+        })
+        .onAppear {
+            NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                if isRecording {
+                    if event.keyCode == 55 || event.keyCode == 56 || event.keyCode == 58 || event.keyCode == 59 || event.keyCode == 60 || event.keyCode == 61 || event.keyCode == 62 || event.keyCode == 54 {
+                         return event
+                    }
+                    
+                    if event.keyCode == 53 { 
+                        isRecording = false
+                        return nil
+                    }
+                    
+                    onChange(Int(event.keyCode), event.modifierFlags.rawValue)
+                    isRecording = false
+                    return nil
+                }
+                return event
+            }
+        }
+    }
+    
+    var shortcutString: String {
+        var s = ""
+        if modifiers & NSEvent.ModifierFlags.control.rawValue != 0 { s += "⌃" }
+        if modifiers & NSEvent.ModifierFlags.option.rawValue != 0 { s += "⌥" }
+        if modifiers & NSEvent.ModifierFlags.shift.rawValue != 0 { s += "⇧" }
+        if modifiers & NSEvent.ModifierFlags.command.rawValue != 0 { s += "⌘" }
+        s += keyString(for: keyCode)
+        return s
+    }
+    
+    func keyString(for code: Int) -> String {
+        switch code {
+        case kVK_ANSI_A: return "A"
+        case kVK_ANSI_S: return "S"
+        case kVK_ANSI_D: return "D"
+        case kVK_ANSI_F: return "F"
+        case kVK_ANSI_H: return "H"
+        case kVK_ANSI_G: return "G"
+        case kVK_ANSI_Z: return "Z"
+        case kVK_ANSI_X: return "X"
+        case kVK_ANSI_C: return "C"
+        case kVK_ANSI_V: return "V"
+        case kVK_ANSI_B: return "B"
+        case kVK_ANSI_Q: return "Q"
+        case kVK_ANSI_W: return "W"
+        case kVK_ANSI_E: return "E"
+        case kVK_ANSI_R: return "R"
+        case kVK_ANSI_Y: return "Y"
+        case kVK_ANSI_T: return "T"
+        case kVK_ANSI_1: return "1"
+        case kVK_ANSI_2: return "2"
+        case kVK_ANSI_3: return "3"
+        case kVK_ANSI_4: return "4"
+        case kVK_ANSI_6: return "6"
+        case kVK_ANSI_5: return "5"
+        case kVK_ANSI_Equal: return "="
+        case kVK_ANSI_9: return "9"
+        case kVK_ANSI_7: return "7"
+        case kVK_ANSI_Minus: return "-"
+        case kVK_ANSI_8: return "8"
+        case kVK_ANSI_0: return "0"
+        case kVK_ANSI_RightBracket: return "]"
+        case kVK_ANSI_O: return "O"
+        case kVK_ANSI_U: return "U"
+        case kVK_ANSI_LeftBracket: return "["
+        case kVK_ANSI_I: return "I"
+        case kVK_ANSI_P: return "P"
+        case kVK_ANSI_L: return "L"
+        case kVK_ANSI_J: return "J"
+        case kVK_ANSI_Quote: return "\""
+        case kVK_ANSI_K: return "K"
+        case kVK_ANSI_Semicolon: return ";"
+        case kVK_ANSI_Backslash: return "\\"
+        case kVK_ANSI_Comma: return ","
+        case kVK_ANSI_Slash: return "/"
+        case kVK_ANSI_N: return "N"
+        case kVK_ANSI_M: return "M"
+        case kVK_ANSI_Period: return "."
+        case kVK_ANSI_Grave: return "`"
+        case kVK_ANSI_KeypadDecimal: return "."
+        case kVK_ANSI_KeypadMultiply: return "*"
+        case kVK_ANSI_KeypadPlus: return "+"
+        case kVK_ANSI_KeypadClear: return "Clear"
+        case kVK_ANSI_KeypadDivide: return "/"
+        case kVK_ANSI_KeypadEnter: return "Enter"
+        case kVK_ANSI_KeypadMinus: return "-"
+        case kVK_ANSI_KeypadEquals: return "="
+        case kVK_ANSI_Keypad0: return "0"
+        case kVK_ANSI_Keypad1: return "1"
+        case kVK_ANSI_Keypad2: return "2"
+        case kVK_ANSI_Keypad3: return "3"
+        case kVK_ANSI_Keypad4: return "4"
+        case kVK_ANSI_Keypad5: return "5"
+        case kVK_ANSI_Keypad6: return "6"
+        case kVK_ANSI_Keypad7: return "7"
+        case kVK_ANSI_Keypad8: return "8"
+        case kVK_ANSI_Keypad9: return "9"
+        case kVK_Return: return "↩"
+        case kVK_Tab: return "⇥"
+        case kVK_Space: return "␣"
+        case kVK_Delete: return "⌫"
+        case kVK_Escape: return "⎋"
+        case kVK_Command: return "⌘"
+        case kVK_Shift: return "⇧"
+        case kVK_CapsLock: return "⇪"
+        case kVK_Option: return "⌥"
+        case kVK_Control: return "⌃"
+        case kVK_RightShift: return "⇧"
+        case kVK_RightOption: return "⌥"
+        case kVK_RightControl: return "⌃"
+        case kVK_Function: return "Fn"
+        case kVK_F17: return "F17"
+        case kVK_VolumeUp: return "Vol+"
+        case kVK_VolumeDown: return "Vol-"
+        case kVK_Mute: return "Mute"
+        case kVK_F18: return "F18"
+        case kVK_F19: return "F19"
+        case kVK_F20: return "F20"
+        case kVK_F5: return "F5"
+        case kVK_F6: return "F6"
+        case kVK_F7: return "F7"
+        case kVK_F3: return "F3"
+        case kVK_F8: return "F8"
+        case kVK_F9: return "F9"
+        case kVK_F11: return "F11"
+        case kVK_F13: return "F13"
+        case kVK_F16: return "F16"
+        case kVK_F14: return "F14"
+        case kVK_F10: return "F10"
+        case kVK_F12: return "F12"
+        case kVK_F15: return "F15"
+        case kVK_Help: return "Help"
+        case kVK_Home: return "Home"
+        case kVK_PageUp: return "PgUp"
+        case kVK_ForwardDelete: return "Del"
+        case kVK_F4: return "F4"
+        case kVK_End: return "End"
+        case kVK_F2: return "F2"
+        case kVK_PageDown: return "PgDn"
+        case kVK_F1: return "F1"
+        case kVK_LeftArrow: return "←"
+        case kVK_RightArrow: return "→"
+        case kVK_DownArrow: return "↓"
+        case kVK_UpArrow: return "↑"
+        default: return "?"
+        }
+    }
+}
+
+struct WindowAccessor: NSViewRepresentable {
+    var callback: (NSWindow?) -> Void
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            self.callback(view.window)
+        }
+        return view
+    }
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }

@@ -38,8 +38,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             button.action = #selector(togglePopover(_:))
         }
         
-        // Setup HotKey
-        setupHotKeyHandler()
+        // Setup HotKey        
+        hotKeyManager.setHotkeyTrigger(triggerFn: { [weak self] in
+            self?.togglePopover(nil)
+        })
+        hotKeyManager.startHotkey()
     }
     
     @objc func togglePopover(_ sender: AnyObject?) {
@@ -53,10 +56,5 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
     }
-    
-    private func setupHotKeyHandler() {
-        hotKeyManager.onHotKeyTriggered = { [weak self] in
-            self?.togglePopover(nil)
-        }
-    }
+
 }

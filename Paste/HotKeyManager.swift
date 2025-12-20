@@ -1,108 +1,79 @@
 import Cocoa
 import Carbon
 
-struct AppShortcut: Hashable, Identifiable, Codable {
-    let id: UUID
-    let name: String
-    let keyCode: Int
-    let modifiers: Int
-    
-    init(id: UUID = UUID(), name: String, keyCode: Int, modifiers: Int) {
-        self.id = id
-        self.name = name
-        self.keyCode = keyCode
-        self.modifiers = modifiers
+
+final class HotKey {
+    var onTrigger: (() -> Void)?
+    private var hotKeyRef: EventHotKeyRef?
+    private var eventHandler: EventHandlerRef?
+
+    func start(keyCode: UInt32 = UInt32(kVK_ANSI_Y), modifiers: UInt32 = UInt32(cmdKey | shiftKey)) {
+        stop()
+        var hotKeyID = EventHotKeyID(signature: OSType("LMST".fourCharCodeValue), id: 1)
+        RegisterEventHotKey(keyCode, modifiers, hotKeyID, GetEventDispatcherTarget(), 0, &hotKeyRef)
+
+        var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        InstallEventHandler(GetEventDispatcherTarget(), { _, _, userData in
+            guard let userData else { return noErr }
+            let manager = Unmanaged<HotKey>.fromOpaque(userData).takeUnretainedValue()
+            manager.onTrigger?()
+            return noErr
+        }, 1, &spec, UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque()), &eventHandler)
     }
-    
-    static let defaults: [AppShortcut] = [
-        AppShortcut(name: "Cmd + Shift + V", keyCode: kVK_ANSI_V, modifiers: cmdKey | shiftKey),
-        AppShortcut(name: "Cmd + Option + V", keyCode: kVK_ANSI_V, modifiers: cmdKey | optionKey),
-        AppShortcut(name: "Ctrl + Shift + V", keyCode: kVK_ANSI_V, modifiers: controlKey | shiftKey),
-        AppShortcut(name: "Cmd + Shift + C", keyCode: kVK_ANSI_C, modifiers: cmdKey | shiftKey),
-        AppShortcut(name: "Option + Space", keyCode: kVK_Space, modifiers: optionKey)
-    ]
+
+    func stop() {
+        if let ref = hotKeyRef { UnregisterEventHotKey(ref); hotKeyRef = nil }
+        if let handler = eventHandler { RemoveEventHandler(handler); eventHandler = nil }
+    }
+}
+
+
+private extension String {
+    var fourCharCodeValue: UInt32 {
+        var result: UInt32 = 0
+        for unicodeScalar in self.unicodeScalars {
+            result = (result << 8) + UInt32(unicodeScalar.value)
+        }
+        return result
+    }
 }
 
 class HotKeyManager: ObservableObject {
-    static let shared = HotKeyManager()
+    let hotKey = HotKey()
     
-    private var eventHotKeyRef: EventHotKeyRef?
-    private var eventHandler: EventHandlerRef?
-    var onHotKeyTriggered: (() -> Void)?
-    
-    // Default: Cmd + Shift + V
-    @Published var currentShortcut: AppShortcut {
-        didSet {
-            updateHotKey(keyCode: currentShortcut.keyCode, modifiers: currentShortcut.modifiers)
-            saveShortcut()
-        }
+    @Published var shortcutKeyCode: Int = UserDefaults.standard.integer(forKey: "shortcutKeyCode")
+    @Published var shortcutModifiers: UInt = UInt(UserDefaults.standard.integer(forKey: "shortcutModifiers"))
+
+    func setHotkeyTrigger(triggerFn: (() -> Void)?) {
+        hotKey.onTrigger = triggerFn
     }
     
-    init() {
-        // Load from UserDefaults
-        if let data = UserDefaults.standard.data(forKey: "currentShortcut"),
-           let saved = try? JSONDecoder().decode(AppShortcut.self, from: data) {
-            self.currentShortcut = saved
-        } else {
-            self.currentShortcut = AppShortcut.defaults[0]
+    func setShortcut(keyCode: Int, modifiers: UInt) {
+        shortcutKeyCode = keyCode
+        shortcutModifiers = modifiers
+        UserDefaults.standard.set(keyCode, forKey: "shortcutKeyCode")
+        UserDefaults.standard.set(modifiers, forKey: "shortcutModifiers")
+        updateHotkey()
+    }
+    
+    func startHotkey() {
+        // Default to Cmd+Shift+V (kVK_ANSI_V = 0x17 = 23)
+        // If nothing stored, use default
+        if shortcutKeyCode == 0 && shortcutModifiers == 0 {
+            shortcutKeyCode = kVK_ANSI_V
+            shortcutModifiers = NSEvent.ModifierFlags.command.rawValue | NSEvent.ModifierFlags.shift.rawValue
         }
         
-        registerHotKey(keyCode: UInt32(currentShortcut.keyCode), modifiers: UInt32(currentShortcut.modifiers))
+        updateHotkey()
     }
     
-    private func saveShortcut() {
-        if let data = try? JSONEncoder().encode(currentShortcut) {
-            UserDefaults.standard.set(data, forKey: "currentShortcut")
-        }
-    }
-    
-    func updateHotKey(keyCode: Int, modifiers: Int) {
-        unregisterHotKey()
-        registerHotKey(keyCode: UInt32(keyCode), modifiers: UInt32(modifiers))
-    }
-    
-    private func unregisterHotKey() {
-        if let eventHotKeyRef = eventHotKeyRef {
-            UnregisterEventHotKey(eventHotKeyRef)
-            self.eventHotKeyRef = nil
-        }
-    }
-    
-    private func registerHotKey(keyCode: UInt32, modifiers: UInt32) {
-        var hotKeyID = EventHotKeyID()
-        hotKeyID.signature = OSType(0x53574654) // 'SWFT'
-        hotKeyID.id = 1
+    func updateHotkey() {
+        var carbonModifiers: UInt32 = 0
+        if shortcutModifiers & NSEvent.ModifierFlags.command.rawValue != 0 { carbonModifiers |= UInt32(cmdKey) }
+        if shortcutModifiers & NSEvent.ModifierFlags.option.rawValue != 0 { carbonModifiers |= UInt32(optionKey) }
+        if shortcutModifiers & NSEvent.ModifierFlags.control.rawValue != 0 { carbonModifiers |= UInt32(controlKey) }
+        if shortcutModifiers & NSEvent.ModifierFlags.shift.rawValue != 0 { carbonModifiers |= UInt32(shiftKey) }
         
-        let status = RegisterEventHotKey(keyCode,
-                                         modifiers,
-                                         hotKeyID,
-                                         GetApplicationEventTarget(),
-                                         0,
-                                         &eventHotKeyRef)
-        
-        if status != noErr {
-            print("Failed to register hot key: \(status)")
-            return
-        }
-        
-        // Install event handler if not already
-        if eventHandler == nil {
-            var eventType = EventTypeSpec()
-            eventType.eventClass = OSType(kEventClassKeyboard)
-            eventType.eventKind = OSType(kEventHotKeyPressed)
-            
-            let pointer = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
-            
-            InstallEventHandler(GetApplicationEventTarget(), { (handler, event, userData) -> OSStatus in
-                guard let userData = userData else { return noErr }
-                let manager = Unmanaged<HotKeyManager>.fromOpaque(userData).takeUnretainedValue()
-                
-                DispatchQueue.main.async {
-                    manager.onHotKeyTriggered?()
-                }
-                
-                return noErr
-            }, 1, &eventType, pointer, &eventHandler)
-        }
+        hotKey.start(keyCode: UInt32(shortcutKeyCode), modifiers: carbonModifiers)
     }
 }
