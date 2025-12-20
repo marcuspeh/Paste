@@ -4,8 +4,11 @@ import AppKit
 struct ContentView: View {
     @EnvironmentObject var clipboardManager: ClipboardManager
     @EnvironmentObject var hotKeyManager: HotKeyManager
+    @StateObject private var launchManager = LaunchManager()
     @State private var showSettings = false
     @State private var copiedItem: UUID? = nil
+    @State private var selectedIndex = 0
+    @State private var eventMonitor: Any? = nil
     
     var body: some View {
         VStack(spacing: 20) {
@@ -28,10 +31,10 @@ struct ContentView: View {
                     .fill(Color(nsColor: .controlBackgroundColor).opacity(0.5))
                 
                 if showSettings {
-                    SettingsView(showSettings: $showSettings)
+                    SettingsView(showSettings: $showSettings, launchManager: launchManager)
                         .transition(.opacity)
                 } else {
-                    ClipboardListView(copiedItem: $copiedItem, selectItem: selectItem)
+                    ClipboardListView(copiedItem: $copiedItem, selectedIndex: selectedIndex, selectItem: selectItem)
                         .transition(.opacity)
                 }
                 
@@ -62,26 +65,32 @@ struct ContentView: View {
                         showSettings.toggle()
                     }
                 }) {
-                    Text(showSettings ? "History" : "Settings")
-                        .font(.system(size: 14, weight: .semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(Color.blue)
-                        .foregroundColor(.white)
-                        .cornerRadius(10)
+                    HStack {
+                        Image(systemName: showSettings ? "clock.arrow.circlepath" : "gearshape")
+                        Text(showSettings ? "History" : "Settings")
+                    }
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                    .background(Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
                 }
                 .buttonStyle(.plain)
                 
                 Button(action: {
                     NSApplication.shared.terminate(nil)
                 }) {
-                    Text("Quit")
-                        .font(.system(size: 14, weight: .semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(Color.gray.opacity(0.4))
-                        .foregroundColor(.primary)
-                        .cornerRadius(10)
+                    HStack {
+                        Image(systemName: "power")
+                        Text("Quit")
+                    }
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                    .background(Color.gray.opacity(0.4))
+                    .foregroundColor(.primary)
+                    .cornerRadius(10)
                 }
                 .buttonStyle(.plain)
             }
@@ -90,6 +99,43 @@ struct ContentView: View {
         }
         .frame(width: 320, height: 500)
         .background(Color(nsColor: .windowBackgroundColor))
+        .onAppear {
+            eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                if showSettings { return event }
+                
+                switch event.keyCode {
+                case 126: // Up
+                    if selectedIndex > 0 {
+                        selectedIndex -= 1
+                        return nil
+                    }
+                case 125: // Down
+                    if selectedIndex < clipboardManager.history.count - 1 {
+                        selectedIndex += 1
+                        return nil
+                    }
+                case 36: // Enter
+                    if !clipboardManager.history.isEmpty && selectedIndex < clipboardManager.history.count {
+                        selectItem(clipboardManager.history[selectedIndex])
+                        return nil
+                    }
+                default:
+                    break
+                }
+                return event
+            }
+        }
+        .onDisappear {
+            if let monitor = eventMonitor {
+                NSEvent.removeMonitor(monitor)
+                eventMonitor = nil
+            }
+        }
+        .onChange(of: clipboardManager.history) { _ in
+            if selectedIndex >= clipboardManager.history.count {
+                selectedIndex = max(0, clipboardManager.history.count - 1)
+            }
+        }
     }
     
     private func selectItem(_ item: ClipboardItem) {
@@ -115,25 +161,34 @@ struct ContentView: View {
 struct ClipboardListView: View {
     @EnvironmentObject var clipboardManager: ClipboardManager
     @Binding var copiedItem: UUID?
+    var selectedIndex: Int
     let selectItem: (ClipboardItem) -> Void
     
     var body: some View {
         ScrollView {
-            VStack(spacing: 1) {
-                if clipboardManager.history.isEmpty {
-                    Text("No items yet")
-                        .foregroundColor(.secondary)
-                        .padding(.top, 40)
-                } else {
-                    ForEach(clipboardManager.history) { item in
-                        ClipboardRow(item: item, selectItem: {
-                            selectItem(item)
-                        })
-                        .opacity(copiedItem == item.id ? 0.5 : 1.0)
+            ScrollViewReader { proxy in
+                VStack(spacing: 1) {
+                    if clipboardManager.history.isEmpty {
+                        Text("No items yet")
+                            .foregroundColor(.secondary)
+                            .padding(.top, 40)
+                    } else {
+                        ForEach(Array(clipboardManager.history.enumerated()), id: \.element.id) { index, item in
+                            ClipboardRow(item: item, isSelected: index == selectedIndex, selectItem: {
+                                selectItem(item)
+                            })
+                            .id(index) // For ScrollViewReader
+                            .opacity(copiedItem == item.id ? 0.5 : 1.0)
+                        }
+                    }
+                }
+                .padding(.vertical, 8)
+                .onChange(of: selectedIndex) { newIndex in
+                    withAnimation {
+                        proxy.scrollTo(newIndex, anchor: .center)
                     }
                 }
             }
-            .padding(.vertical, 8)
         }
     }
 }
@@ -141,6 +196,7 @@ struct ClipboardListView: View {
 struct ClipboardRow: View {
     @ObservedObject var item: ClipboardItem
     @EnvironmentObject var clipboardManager: ClipboardManager
+    var isSelected: Bool
     let selectItem: () -> Void
     
     var body: some View {
@@ -187,8 +243,8 @@ struct ClipboardRow: View {
                 }
             }) {
                 Image(systemName: item.isPinned ? "pin.fill" : "pin")
-                    .foregroundColor(item.isPinned ? .yellow : .secondary.opacity(0.5))
-                    .font(.system(size: 12))
+                .foregroundColor(item.isPinned ? .yellow : (isSelected ? .secondary : .secondary.opacity(0.5)))
+                .font(.system(size: 12))
             }
             .buttonStyle(.plain)
         }
@@ -198,7 +254,9 @@ struct ClipboardRow: View {
         .onTapGesture {
             selectItem()
         }
-        .background(Color.white.opacity(0.001)) // For tap gesture
+        .background(isSelected ? Color.blue.opacity(0.2) : Color.white.opacity(0.001))
+        .cornerRadius(6)
+        .padding(.horizontal, 4)
     }
 }
 
@@ -206,6 +264,7 @@ struct SettingsView: View {
     @EnvironmentObject var hotKeyManager: HotKeyManager
     @EnvironmentObject var clipboardManager: ClipboardManager
     @Binding var showSettings: Bool
+    @ObservedObject var launchManager: LaunchManager
     
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -236,11 +295,21 @@ struct SettingsView: View {
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                     Spacer()
-                    Text("\(clipboardManager.maxItems)")
-                        .font(.headline)
+                    TextField("Limit", value: $clipboardManager.maxItems, formatter: NumberFormatter())
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 60)
+                        .multilineTextAlignment(.trailing)
                 }
-                
-                Stepper("", value: $clipboardManager.maxItems, in: 5...50, step: 1)
+            }
+            
+            Divider()
+            
+            // Launch at Login
+            HStack {
+                Text("Launch at Login")
+                Spacer()
+                Toggle("", isOn: $launchManager.isLaunchAtLoginEnabled)
+                    .toggleStyle(.switch)
                     .labelsHidden()
             }
             
@@ -262,5 +331,6 @@ struct SettingsView: View {
             Spacer()
         }
         .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
