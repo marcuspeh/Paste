@@ -148,9 +148,9 @@ struct ContentView: View {
         clipboardManager.copyToPasteboard(item: item)
         
         // Delay closing to show feedback
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
             // Close popover
-            (NSApplication.shared.delegate as? AppDelegate)?.togglePopover(nil)
+            clipboardManager.closePopover()
             // Paste
             PasteHelper.paste()
             // Reset feedback

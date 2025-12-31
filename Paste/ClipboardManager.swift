@@ -246,6 +246,11 @@ class ClipboardManager: ObservableObject {
         history.removeAll(where: { !$0.isPinned })
     }
     
+    func closePopover() {
+        let statusItem = NSApp.windows.first?.value(forKey: "statusItem") as? NSStatusItem
+        statusItem?.button?.performClick(nil)
+    }
+
     // MARK: - Persistence
     
     private func savePinnedItems() {
