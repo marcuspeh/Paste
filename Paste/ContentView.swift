@@ -8,7 +8,7 @@ struct ContentView: View {
     @StateObject private var launchManager = LaunchManager()
     @State private var showSettings = false
     @State private var copiedItem: UUID? = nil
-    @State private var selectedIndex = 0
+    @State private var selectedIndex = -1
     @State private var eventMonitor: Any? = nil
     
     var body: some View {
@@ -34,7 +34,7 @@ struct ContentView: View {
                 if showSettings {
                     SettingsView(showSettings: $showSettings, launchManager: launchManager)
                         .transition(.opacity)
-                } else {
+                    .resizable()
                     ClipboardListView(copiedItem: $copiedItem, selectedIndex: selectedIndex, selectItem: selectItem)
                         .transition(.opacity)
                 }
@@ -101,24 +101,41 @@ struct ContentView: View {
         .frame(width: 320, height: 500)
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear {
+            // Reset state on appear
+            selectedIndex = -1
+            showSettings = false
+            
             eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 if showSettings { return event }
                 
                 switch event.keyCode {
                 case 126: // Up
-                    if selectedIndex > 0 {
+                    if selectedIndex == -1 {
+                        if !clipboardManager.history.isEmpty {
+                            selectedIndex = 0
+                            return nil
+                        }
+                    } else if selectedIndex > 0 {
                         selectedIndex -= 1
                         return nil
                     }
                 case 125: // Down
-                    if selectedIndex < clipboardManager.history.count - 1 {
+                    if selectedIndex == -1 {
+                        if !clipboardManager.history.isEmpty {
+                            selectedIndex = 0
+                            return nil
+                        }
+                    } else if selectedIndex < clipboardManager.history.count - 1 {
                         selectedIndex += 1
                         return nil
                     }
                 case 36: // Enter
-                    if !clipboardManager.history.isEmpty && selectedIndex < clipboardManager.history.count {
-                        selectItem(clipboardManager.history[selectedIndex])
-                        return nil
+                    if !clipboardManager.history.isEmpty {
+                        let indexToUse = selectedIndex == -1 ? 0 : selectedIndex
+                        if indexToUse < clipboardManager.history.count {
+                            selectItem(clipboardManager.history[indexToUse])
+                            return nil
+                        }
                     }
                 default:
                     break
@@ -131,6 +148,10 @@ struct ContentView: View {
                 NSEvent.removeMonitor(monitor)
                 eventMonitor = nil
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            selectedIndex = -1
+            showSettings = false
         }
         .onChange(of: clipboardManager.history) { _ in
             if selectedIndex >= clipboardManager.history.count {
@@ -185,8 +206,10 @@ struct ClipboardListView: View {
                 }
                 .padding(.vertical, 8)
                 .onChange(of: selectedIndex) { newIndex in
-                    withAnimation {
-                        proxy.scrollTo(newIndex, anchor: .center)
+                    if newIndex >= 0 {
+                        withAnimation {
+                            proxy.scrollTo(newIndex, anchor: .center)
+                        }
                     }
                 }
             }

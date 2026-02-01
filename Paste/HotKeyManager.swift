@@ -61,7 +61,7 @@ class HotKeyManager: ObservableObject {
         // If nothing stored, use default
         if shortcutKeyCode == 0 && shortcutModifiers == 0 {
             shortcutKeyCode = kVK_ANSI_V
-            shortcutModifiers = NSEvent.ModifierFlags.command.rawValue | NSEvent.ModifierFlags.shift.rawValue
+            shortcutModifiers = NSEvent.ModifierFlags.command.rawValue | NSEvent.ModifierFlags.control.rawValue
         }
         
         updateHotkey()
